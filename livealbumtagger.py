@@ -60,6 +60,13 @@ def match_tracks(local_tracks, mb_release):
                 break
     return matches, len(mb_tracks)
 
+def contains_live_tracks(local_tracks):
+    live_title_count = 0
+    for local_track in local_tracks:
+        if "live" in local_track.lower():
+            live_title_count += 1
+    return live_title_count, len(local_tracks)
+
 def is_live_album(mb_release):
     primary_type = mb_release['release-group'].get('primary-type', '').lower()
     secondary_types = [stype.lower() for stype in mb_release['release-group'].get('secondary-type-list', [])]
@@ -83,14 +90,31 @@ def process_album(album_name, file_paths):
         if not is_live_album(mb_release):
             continue
         matches, total_tracks = match_tracks(local_tracks, mb_release)
-        logging.info(f"Checking release: {mb_release['title']}, {matches} matches out of {total_tracks} tracks")
-        if total_tracks > 0 and matches / total_tracks > 0.75 and matches > best_match_score:
+
+        # Überprüfe, ob die Bedingungen für ein best_match erfüllt sind
+        if total_tracks > 0 and (matches / total_tracks > 0.75) and matches > best_match_score:
             best_match = mb_release
             best_match_score = matches
             best_match_total_tracks = total_tracks
 
+    if not best_match:
+        live_title_count, total_tracks = contains_live_tracks(local_tracks)
+
+        if total_tracks > 0 and (live_title_count / total_tracks > 0.8):
+            best_match_total_tracks = total_tracks
+            logging.info(f"\033[94mAlbum '{album_name}' seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
+            for file_path in file_paths:
+                audio = EasyMP4(file_path)
+                clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
+                new_album_name = f"(Live) {clean_album_name}"
+                audio['album'] = new_album_name
+                audio.save()
+                print(f"\033[92mUpdated album '{album_name}' to '{new_album_name}'\033[0m")  # Green
+        else:
+            logging.info(f"\033[91mNo type update for album: {album_name}\033[0m")  # Red
+
     if best_match:
-        logging.info(f"Best match for album: {album_name} with {best_match_score} matching tracks out of {best_match_total_tracks}")
+        logging.info(f"\033[94mBest match for album: {album_name} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
         for file_path in file_paths:
             audio = EasyMP4(file_path)
             clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
@@ -119,11 +143,16 @@ def crawl_music_directory(directory):
     return music_tags
 
 def main(directory):
+
+    open("Tagging_is_running.txt", 'w').close()
+
     logging.info(f"Starting processing of directory: {directory}")
     music_tags = crawl_music_directory(directory)
     for album_name, file_paths in music_tags.items():
         process_album(album_name, file_paths)
     logging.info(f"Processing of directory completed: {directory}")
+
+    os.remove("Tagging_is_running.txt")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process music directory and update album tags.")
