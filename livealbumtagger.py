@@ -31,7 +31,7 @@ def get_album_info_from_musicbrainz(album_name, artist):
         logging.info(f"No live tag found for album: {album_name}, artist: {artist}")
         return []
     except Exception as e:
-        logging.error(f"Error querying MusicBrainz: {e}")
+        logging.error(f"\033[91mError querying MusicBrainz: {e}\033[0m")
         return []
 
 def get_release_track_list(release_id):
@@ -43,7 +43,7 @@ def get_release_track_list(release_id):
                 tracks.append(track['recording']['title'])
         return tracks
     except Exception as e:
-        logging.error(f"Error fetching track list for release ID {release_id}: {e}")
+        logging.error(f"\033[91mError fetching track list for release ID {release_id}: {e}\033[0m")
         return []
 
 def match_tracks(local_tracks, mb_release):
@@ -75,6 +75,7 @@ def is_live_album(mb_release):
 def process_album(album_name, file_paths):
     album_artist = None
     local_tracks = []
+
     if file_paths:
         audio = EasyMP4(file_paths[0])
         album_artist = audio.get('artist', [None])[0]
@@ -86,48 +87,49 @@ def process_album(album_name, file_paths):
     best_match_score = 0
     best_match_total_tracks = 0
 
+    # Erste Überprüfung: Suche nach dem besten passenden Release
     for mb_release in mb_releases:
         if not is_live_album(mb_release):
             continue
         matches, total_tracks = match_tracks(local_tracks, mb_release)
 
-        # Überprüfe, ob die Bedingungen für ein best_match erfüllt sind
         if total_tracks > 0 and (matches / total_tracks > 0.75) and matches > best_match_score:
             best_match = mb_release
             best_match_score = matches
             best_match_total_tracks = total_tracks
 
-    if not best_match:
+    if best_match:
+        logging.info(f"\033[94mBest match for album: {album_name} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
+        update_album_metadata(file_paths, album_name)
+    else:
+        # Zweite Überprüfung: Überprüfe, ob das Album viele "Live"-Titel enthält
         live_title_count, total_tracks = contains_live_tracks(local_tracks)
 
         if total_tracks > 0 and (live_title_count / total_tracks > 0.8):
-            best_match_total_tracks = total_tracks
             logging.info(f"\033[94mAlbum '{album_name}' seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
-            for file_path in file_paths:
-                audio = EasyMP4(file_path)
-                clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
-                new_album_name = f"(Live) {clean_album_name}"
-                audio['album'] = new_album_name
-                audio.save()
-                print(f"\033[92mUpdated album '{album_name}' to '{new_album_name}'\033[0m")  # Green
+            update_album_metadata(file_paths, album_name)
         else:
-            logging.info(f"\033[91mNo type update for album: {album_name}\033[0m")  # Red
+            logging.info(f"\033[91mNo type album for album: {album_name}\033[0m")  # Red
 
-    if best_match:
-        logging.info(f"\033[94mBest match for album: {album_name} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
-        for file_path in file_paths:
-            audio = EasyMP4(file_path)
-            clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
-            new_album_name = f"(Live) {clean_album_name}"
-            audio['album'] = new_album_name
-            audio.save()
-            print(f"\033[92mUpdated album '{album_name}' to '{new_album_name}'\033[0m")  # Green
-    else:
-        logging.info(f"\033[91mNo type update for album: {album_name}\033[0m")  # Red
+def update_album_metadata(file_paths, album_name):
+    clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
+    new_album_name = f"(Live) {clean_album_name}"
+
+    for file_path in file_paths:
+        audio = EasyMP4(file_path)
+        audio['album'] = new_album_name
+        audio.save()
+        print(f"\033[92mUpdated album '{album_name}' to '{new_album_name}: {file_path}'\033[0m")  # Green
+
 
 def crawl_music_directory(directory):
     music_tags = {}
     for root, _, files in os.walk(directory):
+        # Überprüfe, ob "(EP)" im Verzeichnisnamen enthalten ist
+        if "(EP)" in root:
+            logging.warning(f"\033[93mIgnoring directory: {root} because it contains '(EP)'\033[0m")
+            continue
+
         for file in files:
             if file.endswith('.m4a'):
                 file_path = os.path.join(root, file)
@@ -139,7 +141,7 @@ def crawl_music_directory(directory):
                     music_tags[album_name].append(file_path)
                     logging.info(f"Found album: {album_name}, file: {file_path}")
                 else:
-                    logging.warning(f"Album name not found for file: {file_path}")
+                    logging.warning(f"\033[93mAlbum name not found for file: {file_path}\033[0m")
     return music_tags
 
 def main(directory):
@@ -160,4 +162,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args.path)
+    main(args.path
