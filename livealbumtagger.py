@@ -72,13 +72,10 @@ def is_live_album(mb_release):
     secondary_types = [stype.lower() for stype in mb_release['release-group'].get('secondary-type-list', [])]
     return 'live' in primary_type or 'live' in secondary_types
 
-def process_album(album_name, file_paths):
-    album_artist = None
+def process_album(album_name, album_artist, file_paths):
     local_tracks = []
 
     if file_paths:
-        audio = EasyMP4(file_paths[0])
-        album_artist = audio.get('artist', [None])[0]
         local_tracks = [EasyMP4(fp).get('title', [None])[0] for fp in file_paths]
 
     logging.info(f"Processing album: {album_name}, artist: {album_artist}")
@@ -99,19 +96,19 @@ def process_album(album_name, file_paths):
             best_match_total_tracks = total_tracks
 
     if best_match:
-        logging.info(f"\033[94mBest match for album: {album_name} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
-        update_album_metadata(file_paths, album_name)
+        logging.info(f"\033[94mBest match for album: {album_name} by {album_artist} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
+        update_album_metadata(file_paths, album_name, album_artist)
     else:
         # Zweite Überprüfung: Überprüfe, ob das Album viele "Live"-Titel enthält
         live_title_count, total_tracks = contains_live_tracks(local_tracks)
 
         if total_tracks > 0 and (live_title_count / total_tracks > 0.8):
-            logging.info(f"\033[94mAlbum '{album_name}' seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
-            update_album_metadata(file_paths, album_name)
+            logging.info(f"\033[94mAlbum '{album_name}' by {album_artist} seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
+            update_album_metadata(file_paths, album_name, album_artist)
         else:
-            logging.info(f"\033[91mNo type album for album: {album_name}\033[0m")  # Red
+            logging.info(f"\033[91mNo type album for album: {album_name} by {album_artist}\033[0m")  # Red
 
-def update_album_metadata(file_paths, album_name):
+def update_album_metadata(file_paths, album_name, album_artist):
     clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
     new_album_name = f"(Live) {clean_album_name}"
 
@@ -119,7 +116,7 @@ def update_album_metadata(file_paths, album_name):
         audio = EasyMP4(file_path)
         audio['album'] = new_album_name
         audio.save()
-        print(f"\033[92mUpdated album '{album_name}' to '{new_album_name}: {file_path}'\033[0m")  # Green
+        print(f"\033[92mUpdated album '{album_name}' by {album_artist} to '{new_album_name}: {file_path}'\033[0m")  # Green
 
 
 def crawl_music_directory(directory):
@@ -127,31 +124,32 @@ def crawl_music_directory(directory):
     for root, _, files in os.walk(directory):
         # Überprüfe, ob "(EP)" im Verzeichnisnamen enthalten ist
         if "(EP)" in root:
-            logging.warning(f"\033[93mIgnoring directory: {root} because it contains '(EP)'\033[0m")
+            logging.warning(f"\033[93mIgnoring '(Live)' in album/track names for directory: {root} because it contains '(EP)'\033[0m")
             continue
-
-        for file in files:
-            if file.endswith('.m4a'):
-                file_path = os.path.join(root, file)
-                audio = EasyMP4(file_path)
-                album_name = audio.get('album', [None])[0]
-                if album_name:
-                    if album_name not in music_tags:
-                        music_tags[album_name] = []
-                    music_tags[album_name].append(file_path)
-                    logging.info(f"Found album: {album_name}, file: {file_path}")
-                else:
-                    logging.warning(f"\033[93mAlbum name not found for file: {file_path}\033[0m")
+        else:
+            for file in files:
+                if file.endswith('.m4a'):
+                    file_path = os.path.join(root, file)
+                    audio = EasyMP4(file_path)
+                    album_name = audio.get('album', [None])[0]
+                    album_artist = audio.get('artist', [None])[0]
+                    if album_name and album_artist:
+                        album_key = (album_name, album_artist)
+                        if album_key not in music_tags:
+                            music_tags[album_key] = []
+                        music_tags[album_key].append(file_path)
+                        logging.info(f"Found album: {album_name}, artist: {album_artist}, file: {file_path}")
+                    else:
+                        logging.warning(f"Album name or artist not found for file: {file_path}")
     return music_tags
 
 def main(directory):
-
     open("Tagging_is_running.txt", 'w').close()
 
     logging.info(f"Starting processing of directory: {directory}")
     music_tags = crawl_music_directory(directory)
-    for album_name, file_paths in music_tags.items():
-        process_album(album_name, file_paths)
+    for (album_name, album_artist), file_paths in music_tags.items():
+        process_album(album_name, album_artist, file_paths)
     logging.info(f"Processing of directory completed: {directory}")
 
     os.remove("Tagging_is_running.txt")
@@ -162,4 +160,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args.path
+    main(args.path)
