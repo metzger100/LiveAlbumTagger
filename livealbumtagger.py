@@ -32,7 +32,7 @@ def get_album_info_from_musicbrainz(album_name, artist, current_album, total_alb
         logging.info(f"[Album: {current_album} of {total_albums}] No live tag found for album: {album_name}, artist: {artist}")
         return []
     except Exception as e:
-        logging.error(f"[Album: {current_album} of {total_albums}] Error querying MusicBrainz: {e}")
+        logging.error(f"\033[91m[Album: {current_album} of {total_albums}] Error querying MusicBrainz: {e}\033[0m")
         return []
 
 def get_release_track_list(release_id, current_album, total_albums):
@@ -44,7 +44,7 @@ def get_release_track_list(release_id, current_album, total_albums):
                 tracks.append(track['recording']['title'])
         return tracks
     except Exception as e:
-        logging.error(f"[Album: {current_album} of {total_albums}] Error fetching track list for release ID {release_id}: {e}")
+        logging.error(f"\033[91m[Album: {current_album} of {total_albums}] Error fetching track list for release ID {release_id}: {e}\033[0m")
         return []
 
 def match_tracks(local_tracks, mb_release, current_album, total_albums):
@@ -96,16 +96,16 @@ def process_album(album_name, album_artist, file_paths, current_album, total_alb
             best_match_total_tracks = total_tracks
 
     if best_match:
-        logging.info(f"[Album: {current_album} of {total_albums}] Best match for album: {album_name} by {album_artist} with {best_match_score} matching tracks out of {best_match_total_tracks}")
+        logging.info(f"\033[94m[Album: {current_album} of {total_albums}] Best match for album: {album_name} by {album_artist} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
         update_album_metadata(file_paths, album_name, album_artist)
     else:
         live_title_count, total_tracks = contains_live_tracks(local_tracks, current_album, total_albums)
 
         if total_tracks > 0 and (live_title_count / total_tracks > 0.8):
-            logging.info(f"[Album: {current_album} of {total_albums}] Album '{album_name}' by {album_artist} seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.")
+            logging.info(f"\033[94m[Album: {current_album} of {total_albums}] Album '{album_name}' by {album_artist} seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
             update_album_metadata(file_paths, album_name, album_artist)
         else:
-            logging.info(f"[Album: {current_album} of {total_albums}] No type album for album: {album_name} by {album_artist}")
+            logging.info(f"\033[91m[Album: {current_album} of {total_albums}] No type album for album: {album_name} by {album_artist}\033[0m")
 
 def update_album_metadata(file_paths, album_name, album_artist):
     clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
@@ -115,13 +115,13 @@ def update_album_metadata(file_paths, album_name, album_artist):
         audio = EasyMP4(file_path)
         audio['album'] = new_album_name
         audio.save()
-        print(f"Updated album '{album_name}' by {album_artist} to '{new_album_name}: {file_path}'")
+        print(f"\033[92mUpdated album '{album_name}' by {album_artist} to '{new_album_name}: {file_path}'\033[0m")
 
 def crawl_music_directory(directory):
     music_tags = {}
     for root, _, files in os.walk(directory):
         if "(EP)" in root:
-            logging.warning(f"Ignoring '(Live)' in album/track names for directory: {root} because it contains '(EP)'")
+            logging.warning(f"\033[93mIgnoring '(Live)' in album/track names for directory: {root} because it contains '(EP)'\033[0m")
             continue
         else:
             for file in files:
@@ -129,15 +129,15 @@ def crawl_music_directory(directory):
                     file_path = os.path.join(root, file)
                     audio = EasyMP4(file_path)
                     album_name = audio.get('album', [None])[0]
-                    album_artist = audio.get('albumartist', [None])[0]
+                    album_artist = audio.get('artist', [None])[0]
                     if album_name and album_artist:
                         album_key = (album_name, album_artist)
                         if album_key not in music_tags:
                             music_tags[album_key] = []
                         music_tags[album_key].append(file_path)
-                        logging.info(f"Found album: {album_name}, album artist: {album_artist}, file: {file_path}")
+                        logging.info(f"Found album: {album_name}, artist: {album_artist}, file: {file_path}")
                     else:
-                        logging.warning(f"Album name or album artist not found for file: {file_path}")
+                        logging.warning(f"Album name or artist not found for file: {file_path}")
     return music_tags
 
 def test_musicbrainz_connection(retries=3, delay=10):
