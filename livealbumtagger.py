@@ -80,7 +80,20 @@ def process_album(album_name, album_artist, file_paths, current_album, total_alb
         local_tracks = [EasyMP4(fp).get('title', [None])[0] for fp in file_paths]
 
     logging.info(f"[Album: {current_album} of {total_albums}] Processing album: {album_name}, artist: {album_artist}")
+
+    # First check for "live" in local track titles
+    live_title_count, total_tracks = contains_live_tracks(local_tracks, current_album, total_albums)
+
+    if total_tracks > 0 and (live_title_count / total_tracks > 0.8):
+        # If the majority of local tracks contain "live", consider it a live album
+        logging.info(f"\033[94m[Album: {current_album} of {total_albums}] Album '{album_name}' by {album_artist} seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
+        update_album_metadata(file_paths, album_name, album_artist)
+        return  # Exit early since we've determined it's a live album
+
+    # If the quick check fails, query MusicBrainz
+    logging.info(f"[Album: {current_album} of {total_albums}] No sufficient evidence from track titles. Querying MusicBrainz...")
     mb_releases = get_album_info_from_musicbrainz(album_name, album_artist, current_album, total_albums)
+
     best_match = None
     best_match_score = 0
     best_match_total_tracks = 0
@@ -99,13 +112,7 @@ def process_album(album_name, album_artist, file_paths, current_album, total_alb
         logging.info(f"\033[94m[Album: {current_album} of {total_albums}] Best match for album: {album_name} by {album_artist} with {best_match_score} matching tracks out of {best_match_total_tracks}\033[0m")
         update_album_metadata(file_paths, album_name, album_artist)
     else:
-        live_title_count, total_tracks = contains_live_tracks(local_tracks, current_album, total_albums)
-
-        if total_tracks > 0 and (live_title_count / total_tracks > 0.8):
-            logging.info(f"\033[94m[Album: {current_album} of {total_albums}] Album '{album_name}' by {album_artist} seems to be a live album because {live_title_count} out of {total_tracks} tracks contain 'live'.\033[0m")
-            update_album_metadata(file_paths, album_name, album_artist)
-        else:
-            logging.info(f"\033[91m[Album: {current_album} of {total_albums}] No type album for album: {album_name} by {album_artist}\033[0m")
+        logging.info(f"\033[91m[Album: {current_album} of {total_albums}] No type album for album: {album_name} by {album_artist}\033[0m")
 
 def update_album_metadata(file_paths, album_name, album_artist):
     clean_album_name = re.sub(r'\s*\(Live\)\s*', '', album_name, flags=re.IGNORECASE).strip()
